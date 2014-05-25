@@ -369,6 +369,24 @@ AC_CHECK_DECL([IUTF8],
 # Checks for protobuf
 PKG_CHECK_MODULES([protobuf], [protobuf])
 
+# PAM support?
+AC_ARG_ENABLE(
+  am,
+  AC_HELP_STRING(--enable-pam, create a PAM session on server startup),
+  found_pam=$enable_pam
+)
+if test "x$enable_pam" = xyes; then
+    # Look for libpam.
+    AC_SEARCH_LIBS(pam_start, [pam], found_pam=yes, found_pam=no)
+    # Look for libpam_misc.
+    AC_SEARCH_LIBS(misc_conv, [pam_misc], found_pam_misc=yes, found_pam_misc=no)
+    if test "x$found_pam" = xno || test "x$found_pam_misc" = xno; then
+	AC_MSG_ERROR("PAM not found")
+    else
+	AC_DEFINE(ENABLE_PAM)
+    fi
+fi
+
 AC_CONFIG_FILES([
   Makefile
   src/Makefile

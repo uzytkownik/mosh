@@ -72,6 +72,11 @@
 #include <libutil.h>
 #endif
 
+#ifdef ENABLE_PAM
+#include <security/pam_appl.h>
+#include <security/pam_misc.h>
+#endif
+
 #include "completeterminal.h"
 #include "swrite.h"
 #include "user.h"
@@ -320,6 +325,41 @@ int main( int argc, char *argv[] )
   }
 }
 
+#ifdef HAVE_PAM
+
+static pam_handle_t pam_handle;
+
+static void pam_teardown(void) {
+  pam_status = pam_close_session( pam_handle, PAM_SILENT );
+  if (pam_status != PAM_SUCCESS) {
+    fprintf( stderr, "\nWarning: PAM session could not be closed %s.\n", pam_strerror( pam_handle, pam_status ));
+    return;
+  }
+  pam_status = pam_end( pam_handle, pam_status );
+  if (pam_status != PAM_SUCCESS) {
+    fprintf( stderr, "\nWarning: PAM could not finish %s.\n", pam_strerror( pam_handle, pam_status ));
+    return;
+  }
+}
+
+static void pam_init(void) {
+  struct pam_conv conv;
+  conv.conv = misc_conv;
+  conv.appdata_ptr = NULL;
+  int pam_status = pam_start( "mosh", getenv( "USER" ), &conv, &pam_handle );
+  if (pam_status != PAM_SUCCESS) {
+    fprintf( stderr, "\nWarning: PAM could not start: %s.\n", pam_strerror( pam_handle, pam_status ));
+    return;
+  }
+  pam_status = pam_open_session( pam_handle, PAM_SILENT );
+  if (pam_status != PAM_SUCCESS) {
+    fprintf( stderr, "\nWarning: PAM session has not been opened: %s.\n", pam_strerror( pam_handle, pam_status ));
+    return;
+  }
+  atexit(pam_teardown, NULL);
+}
+#endif
+
 int run_server( const char *desired_ip, const char *desired_port,
 		const string &command_path, char *command_argv[],
 		const int colors, bool verbose, bool with_motd ) {
@@ -359,7 +399,6 @@ int run_server( const char *desired_ip, const char *desired_port,
   fatal_assert( 0 == sigaction( SIGHUP, &sa, NULL ) );
   fatal_assert( 0 == sigaction( SIGPIPE, &sa, NULL ) );
 
-
   /* detach from terminal */
   pid_t the_pid = fork();
   if ( the_pid < 0 ) {
@@ -379,6 +418,11 @@ int run_server( const char *desired_ip, const char *desired_port,
 #ifndef HAVE_IUTF8
   fprintf( stderr, "\nWarning: termios IUTF8 flag not defined.\nCharacter-erase of multibyte character sequence\nprobably does not work properly on this platform.\n" );
 #endif /* HAVE_IUTF8 */
+
+#ifdef HAVE_PAM
+   /* detach from PAM session */
+  pam_init();
+#endif
 
   /* close file descriptors */
   if ( !verbose ) {
